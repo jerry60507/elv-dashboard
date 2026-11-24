@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>廢車回收處理業營運與庫存監控儀表板</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --primary: #174EA6;
+    --primary-light: #1A73E8;
+    --bg: #F1F3F4;
+    --card: #FFFFFF;
+    --border: #DADCE0;
+    --text-main: #202124;
+    --text-sub: #5F6368;
+    --green: #137333;
+    --green-bg: #E6F4EA;
+    --red: #C5221F;
+    --red-bg: #FCE8E6;
+    --amber: #B06000;
+    --amber-bg: #FEF7E0;
+  }
+  * { box-sizing: border-box; font-family: "Microsoft JhengHei", "PingFang TC", -apple-system, BlinkMacSystemFont, sans-serif; }
+  body { margin: 0; padding: 16px; background: var(--bg); color: var(--text-main); }
+  .container { max-width: 1560px; margin: 0 auto; }
+
+  /* Header & Controls */
+  .header {
+    background: linear-gradient(135deg, #174EA6 0%, #1A73E8 100%);
+    color: white;
+    border-radius: 10px;
+    padding: 16px 22px;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.12);
+    margin-bottom: 16px;
+  }
+  .header-title h1 { margin: 0 0 4px 0; font-size: 22px; letter-spacing: 0.5px; }
+  .header-title p { margin: 0; font-size: 12.5px; color: #D2E3FC; }
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .control-box {
+    background: white;
+    color: var(--text-main);
+    border-radius: 8px;
+    padding: 6px 12px;
+    min-width: 160px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  }
+  .control-box label { display: block; font-size: 11px; font-weight: bold; color: var(--text-sub); margin-bottom: 2px; }
+  .control-box select {
+    width: 100%; border: none; font-size: 13.5px; font-weight: bold; color: var(--text-main);
+    background: transparent; cursor: pointer; outline: none;
+  }
+  .upload-btn {
+    background: #34A853; color: white; border: none; border-radius: 8px; padding: 10px 14px;
+    font-size: 13px; font-weight: bold; cursor: pointer; display: flex; align-items: center; gap: 6px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.2); transition: background 0.2s;
+  }
+  .upload-btn:hover { background: #2D8E47; }
+
+  /* KPI Grid */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 14px;
+    margin-bottom: 16px;
+  }
+  @media (max-width: 1200px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+  .kpi-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+  .kpi-card::before {
+    content: ""; position: absolute; left: 0; top: 10%; height: 80%; width: 5px; border-radius: 0 4px 4px 0;
+    background: var(--accent, #1A73E8);
+  }
+  .kpi-title { font-size: 12.5px; font-weight: bold; color: var(--text-sub); margin-bottom: 6px; }
+  .kpi-val { font-size: 22px; font-weight: bold; color: var(--text-main); margin-bottom: 6px; }
+  .kpi-sub1 { font-size: 12.5px; font-weight: bold; margin-bottom: 3px; }
+  .kpi-sub2 { font-size: 11.5px; color: var(--text-sub); }
+
+  /* Middle Grid */
+  .mid-grid {
+    display: grid;
+    grid-template-columns: 48% 1fr;
+    gap: 14px;
+    margin-bottom: 16px;
+  }
+  @media (max-width: 1100px) { .mid-grid { grid-template-columns: 1fr; } }
+  .col-stack { display: flex; flex-direction: column; gap: 14px; }
+
+  /* Bottom Grid */
+  .bot-grid {
+    display: grid;
+    grid-template-columns: 36% 1fr;
+    gap: 14px;
+  }
+  @media (max-width: 1100px) { .bot-grid { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+  .card-header {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 6px;
+  }
+  .card-title { font-size: 14.5px; font-weight: bold; color: var(--text-main); margin: 0; }
+  .badge {
+    font-size: 11.5px; font-weight: bold; padding: 3px 8px; border-radius: 12px;
+    background: #E8F0FE; color: var(--primary);
+  }
+  .badge-alert { background: var(--red-bg); color: var(--red); }
+
+  .chart-wrap { position: relative; width: 100%; }
+
+  /* Audit Table */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    background: var(--primary); color: white; padding: 9px 6px; text-align: center;
+    font-weight: bold; border: 1px solid #15438E;
+  }
+  td {
+    padding: 9px 6px; text-align: center; border: 1px solid var(--border);
+  }
+  tr.row-active { background-color: #E8F0FE !important; font-weight: bold; }
+  tr.row-total { background-color: #F8F9FA; font-weight: bold; border-top: 2px solid #9AA0A6; }
+  tr.clickable:hover { background-color: #F1F3F4; cursor: pointer; }
+  .cell-alert-high { background-color: #FAD2CF; color: #A50E0E; font-weight: bold; }
+  .cell-alert-mid { background-color: #FEEFC3; color: #8A4B00; font-weight: bold; }
+  .status-pill {
+    display: inline-block; padding: 3px 8px; border-radius: 12px; font-size: 12px; font-weight: bold;
+  }
+  .st-ok { background: var(--green-bg); color: var(--green); }
+  .st-warn { background: var(--amber-bg); color: var(--amber); }
+  .st-danger { background: var(--red-bg); color: var(--red); }
+</style>
+</head>
+<body>
+<div class="container">
+  <!-- TOP HEADER -->
+  <div class="header">
+    <div class="header-title">
+      <h1>廢車回收處理業營運與庫存監控儀表板</h1>
+      <p id="dataStatusText">內建《廢車回收處理業數據彙整》最新數據（截至 115-10）｜ 支援匯入新版 Excel 即時更新</p>
+    </div>
+    <div class="controls">
+      <div class="control-box">
+        <label>比較基準模式</label>
+        <select id="modeSelect">
+          <option value="yoy_sync" selected>115 vs 114 同期累計比較</option>
+          <option value="full_year">全年度總覽比較 (114全年 vs 115累計)</option>
+          <option value="only_115">僅檢視 115 年度</option>
+          <option value="only_114">僅檢視 114 年度</option>
+        </select>
+      </div>
+      <div class="control-box">
+        <label>截止月份篩選</label>
+        <select id="monthSelect"></select>
+      </div>
+      <div class="control-box">
+        <label>處理廠別檢視</label>
+        <select id="plantSelect">
+          <option value="4家合計" selected>4家合計 (整體)</option>
+          <option value="帝壹統">帝壹統</option>
+          <option value="集合成">集合成</option>
+          <option value="綠化">綠化</option>
+          <option value="巨基">巨基</option>
+        </select>
+      </div>
+      <input type="file" id="excelInput" accept=".xlsx,.xls" style="display:none" />
+      <button class="upload-btn" onclick="document.getElementById('excelInput').click()" title="上傳更新後的 Excel 檔即可自動刷新全部圖表">
+        📂 匯入新版 Excel 更新
+      </button>
+    </div>
+  </div>
+
+  <!-- KPI CARDS -->
+  <div class="kpi-grid" id="kpiGrid"></div>
+
+  <!-- MIDDLE SECTION -->
+  <div class="mid-grid">
+    <!-- LEFT: RECYCLING -->
+    <div class="col-stack">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title">【回收業】月度廢車回收流向與總重量趨勢</h3>
+          <span class="badge">全國回收端數據</span>
+        </div>
+        <div class="chart-wrap" style="height: 270px;">
+          <canvas id="chartRecycleTrend"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title" id="titleVehicleMix">【回收業】汽、機車回收去向結構差異</h3>
+          <span class="badge">認證 / 出口 / 其他佔比</span>
+        </div>
+        <div class="chart-wrap" style="height: 155px;">
+          <canvas id="chartVehicleMix"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT: PROCESSING & INVENTORY -->
+    <div class="col-stack">
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title" id="titleShellFlow">【處理業】廢車殼「進場來源 vs 投料量 vs 庫存水位」</h3>
+          <span class="badge" id="badgePlant1">4家合計</span>
+        </div>
+        <div class="chart-wrap" style="height: 210px;">
+          <canvas id="chartShellFlow"></canvas>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h3 class="card-title" id="titleAsrFlow">【庫存檢核重點】ASR-DF 產銷去化與 ASR/ASRDF 庫存追蹤</h3>
+          <span class="badge badge-alert" id="badgeAsrAlert">庫存攀升監控</span>
+        </div>
+        <div class="chart-wrap" style="height: 215px;">
+          <canvas id="chartAsrFlow"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BOTTOM SECTION -->
+  <div class="bot-grid">
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title" id="titlePlantCompare">【4家處理業比較】進場規模與認證/非認證結構</h3>
+        <span class="badge">點擊右側表格可切換單廠</span>
+      </div>
+      <div class="chart-wrap" style="height: 235px;">
+        <canvas id="chartPlantCompare"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title" id="titleAuditTable">【4家處理業與整體】營運量能暨庫存健康度檢核表</h3>
+        <span class="badge">期末庫存單位：公噸</span>
+      </div>
+      <div style="overflow-x: auto;">
+        <table id="auditTable"></table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// Embedded initial data from 廢車回收處理業數據彙整.xlsx
+let s1Data = [{"ym": "114-01", "car_cert": 11193.0, "car_exp": 12562.0, "car_oth": 5483.0, "car_tot": 29238.0, "moto_cert": 21533.0, "moto_exp": 21357.0, "moto_oth": 1108.0, "moto_tot": 43998.0, "tot_cert": 32726.0, "tot_exp": 33919.0, "tot_oth": 6591.0, "tot_veh": 73236.0, "est_wt_kg": 37085346, "ship_wt_kg": 0.0, "year": "114", "month": 1}, {"ym": "114-02", "car_cert": 11693.0, "car_exp": 9830.0, "car_oth": 5637.0, "car_tot": 27160.0, "moto_cert": 22996.0, "moto_exp": 13000.0, "moto_oth": 1121.0, "moto_tot": 37117.0, "tot_cert": 34689.0, "tot_exp": 22830.0, "tot_oth": 6758.0, "tot_veh": 64277.0, "est_wt_kg": 34141794, "ship_wt_kg": 0.0, "year": "114", "month": 2}, {"ym": "114-03", "car_cert": 13912.0, "car_exp": 13243.0, "car_oth": 5885.0, "car_tot": 33040.0, "moto_cert": 26493.0, "moto_exp": 17659.0, "moto_oth": 125.0, "moto_tot": 44277.0, "tot_cert": 40405.0, "tot_exp": 30902.0, "tot_oth": 6010.0, "tot_veh": 77317.0, "est_wt_kg": 41461514, "ship_wt_kg": 0.0, "year": "114", "month": 3}, {"ym": "114-04", "car_cert": 12821.0, "car_exp": 13153.0, "car_oth": 3374.0, "car_tot": 29348.0, "moto_cert": 22899.0, "moto_exp": 16642.0, "moto_oth": 307.0, "moto_tot": 39848.0, "tot_cert": 35720.0, "tot_exp": 29795.0, "tot_oth": 3681.0, "tot_veh": 69196.0, "est_wt_kg": 36870996, "ship_wt_kg": 0.0, "year": "114", "month": 4}, {"ym": "114-05", "car_cert": 12785.0, "car_exp": 11885.0, "car_oth": 6718.0, "car_tot": 31388.0, "moto_cert": 24909.0, "moto_exp": 13545.0, "moto_oth": 281.0, "moto_tot": 38735.0, "tot_cert": 37694.0, "tot_exp": 25430.0, "tot_oth": 6999.0, "tot_veh": 70123.0, "est_wt_kg": 39115530, "ship_wt_kg": 0.0, "year": "114", "month": 5}, {"ym": "114-06", "car_cert": 12405.0, "car_exp": 13521.0, "car_oth": 7599.0, "car_tot": 33525.0, "moto_cert": 23606.0, "moto_exp": 14864.0, "moto_oth": 613.0, "moto_tot": 39083.0, "tot_cert": 36011.0, "tot_exp": 28385.0, "tot_oth": 8212.0, "tot_veh": 72608.0, "est_wt_kg": 41590931, "ship_wt_kg": 0.0, "year": "114", "month": 6}, {"ym": "114-07", "car_cert": 12297.0, "car_exp": 17782.0, "car_oth": 7785.0, "car_tot": 37864.0, "moto_cert": 25264.0, "moto_exp": 26323.0, "moto_oth": 137.0, "moto_tot": 51724.0, "tot_cert": 37561.0, "tot_exp": 44105.0, "tot_oth": 7922.0, "tot_veh": 89588.0, "est_wt_kg": 47595648, "ship_wt_kg": 0.0, "year": "114", "month": 7}, {"ym": "114-08", "car_cert": 13007.0, "car_exp": 13165.0, "car_oth": 8591.0, "car_tot": 34763.0, "moto_cert": 26922.0, "moto_exp": 18014.0, "moto_oth": 122.0, "moto_tot": 45058.0, "tot_cert": 39929.0, "tot_exp": 31179.0, "tot_oth": 8713.0, "tot_veh": 79821.0, "est_wt_kg": 43498391, "ship_wt_kg": 0.0, "year": "114", "month": 8}, {"ym": "114-09", "car_cert": 11119.0, "car_exp": 13555.0, "car_oth": 6230.0, "car_tot": 30904.0, "moto_cert": 24311.0, "moto_exp": 21967.0, "moto_oth": 135.0, "moto_tot": 46413.0, "tot_cert": 35430.0, "tot_exp": 35522.0, "tot_oth": 6365.0, "tot_veh": 77317.0, "est_wt_kg": 39190946, "ship_wt_kg": 0.0, "year": "114", "month": 9}, {"ym": "114-10", "car_cert": 10503.0, "car_exp": 10980.0, "car_oth": 7763.0, "car_tot": 29246.0, "moto_cert": 24852.0, "moto_exp": 15676.0, "moto_oth": 143.0, "moto_tot": 40671.0, "tot_cert": 35355.0, "tot_exp": 26656.0, "tot_oth": 7906.0, "tot_veh": 69917.0, "est_wt_kg": 36821692, "ship_wt_kg": 0.0, "year": "114", "month": 10}, {"ym": "114-11", "car_cert": 11313.0, "car_exp": 13361.0, "car_oth": 5484.0, "car_tot": 30158.0, "moto_cert": 27009.0, "moto_exp": 19391.0, "moto_oth": 243.0, "moto_tot": 46643.0, "tot_cert": 38322.0, "tot_exp": 32752.0, "tot_oth": 5727.0, "tot_veh": 76801.0, "est_wt_kg": 38355636, "ship_wt_kg": 0.0, "year": "114", "month": 11}, {"ym": "114-12", "car_cert": 13118.0, "car_exp": 14512.0, "car_oth": 4359.0, "car_tot": 31989.0, "moto_cert": 26631.0, "moto_exp": 20225.0, "moto_oth": 285.0, "moto_tot": 47141.0, "tot_cert": 39749.0, "tot_exp": 34737.0, "tot_oth": 4644.0, "tot_veh": 79130.0, "est_wt_kg": 40492967, "ship_wt_kg": 0.0, "year": "114", "month": 12}, {"ym": "115-01", "car_cert": 13641.0, "car_exp": 13495.0, "car_oth": 4881.0, "car_tot": 32017.0, "moto_cert": 27363.0, "moto_exp": 19890.0, "moto_oth": 109.0, "moto_tot": 47362.0, "tot_cert": 41004.0, "tot_exp": 33385.0, "tot_oth": 4990.0, "tot_veh": 79379.0, "est_wt_kg": 40543149, "ship_wt_kg": 10366780.0, "year": "115", "month": 1}, {"ym": "115-02", "car_cert": 8717.0, "car_exp": 11277.0, "car_oth": 5727.0, "car_tot": 25721.0, "moto_cert": 17043.0, "moto_exp": 16648.0, "moto_oth": 71.0, "moto_tot": 33762.0, "tot_cert": 25760.0, "tot_exp": 27925.0, "tot_oth": 5798.0, "tot_veh": 59483.0, "est_wt_kg": 32219029, "ship_wt_kg": 6492060.0, "year": "115", "month": 2}, {"ym": "115-03", "car_cert": 14115.0, "car_exp": 10523.0, "car_oth": 6911.0, "car_tot": 31549.0, "moto_cert": 25820.0, "moto_exp": 19664.0, "moto_oth": 130.0, "moto_tot": 45614.0, "tot_cert": 39935.0, "tot_exp": 30187.0, "tot_oth": 7041.0, "tot_veh": 77163.0, "est_wt_kg": 39863953, "ship_wt_kg": 11473070.0, "year": "115", "month": 3}, {"ym": "115-04", "car_cert": 12668.0, "car_exp": 12253.0, "car_oth": 5651.0, "car_tot": 30572.0, "moto_cert": 25366.0, "moto_exp": 21608.0, "moto_oth": 82.0, "moto_tot": 47056.0, "tot_cert": 38034.0, "tot_exp": 33861.0, "tot_oth": 5733.0, "tot_veh": 77628.0, "est_wt_kg": 38863532, "ship_wt_kg": 9359400.0, "year": "115", "month": 4}, {"ym": "115-05", "car_cert": 12487.0, "car_exp": 17604.0, "car_oth": 6118.0, "car_tot": 36209.0, "moto_cert": 26653.0, "moto_exp": 26976.0, "moto_oth": 101.0, "moto_tot": 53730.0, "tot_cert": 39140.0, "tot_exp": 44580.0, "tot_oth": 6219.0, "tot_veh": 89939.0, "est_wt_kg": 45865165, "ship_wt_kg": 9027600.0, "year": "115", "month": 5}, {"ym": "115-06", "car_cert": 12481.0, "car_exp": 12846.0, "car_oth": 4765.0, "car_tot": 30092.0, "moto_cert": 25297.0, "moto_exp": 26182.0, "moto_oth": 99.0, "moto_tot": 51578.0, "tot_cert": 37778.0, "tot_exp": 39028.0, "tot_oth": 4864.0, "tot_veh": 81670.0, "est_wt_kg": 38684736, "ship_wt_kg": 9371660.0, "year": "115", "month": 6}, {"ym": "115-07", "car_cert": 13142.0, "car_exp": 15724.0, "car_oth": 6970.0, "car_tot": 35836.0, "moto_cert": 27814.0, "moto_exp": 21904.0, "moto_oth": 99.0, "moto_tot": 49817.0, "tot_cert": 40956.0, "tot_exp": 37628.0, "tot_oth": 7069.0, "tot_veh": 85653.0, "est_wt_kg": 45117214, "ship_wt_kg": 11458800.0, "year": "115", "month": 7}, {"ym": "115-08", "car_cert": 12632.0, "car_exp": 16209.0, "car_oth": 5742.0, "car_tot": 34583.0, "moto_cert": 27164.0, "moto_exp": 20679.0, "moto_oth": 110.0, "moto_tot": 47953.0, "tot_cert": 39796.0, "tot_exp": 36888.0, "tot_oth": 5852.0, "tot_veh": 82536.0, "est_wt_kg": 43529681, "ship_wt_kg": 9248790.0, "year": "115", "month": 8}, {"ym": "115-09", "car_cert": 11960.0, "car_exp": 16172.0, "car_oth": 1458.0, "car_tot": 29590.0, "moto_cert": 26508.0, "moto_exp": 18581.0, "moto_oth": 93.0, "moto_tot": 45182.0, "tot_cert": 38468.0, "tot_exp": 34753.0, "tot_oth": 1551.0, "tot_veh": 74772.0, "est_wt_kg": 37585474, "ship_wt_kg": 8782210.0, "year": "115", "month": 9}, {"ym": "115-10", "car_cert": 12335.0, "car_exp": 13999.0, "car_oth": 5902.0, "car_tot": 32236.0, "moto_cert": 30223.0, "moto_exp": 14669.0, "moto_oth": 119.0, "moto_tot": 45011.0, "tot_cert": 42558.0, "tot_exp": 28668.0, "tot_oth": 6021.0, "tot_veh": 77247.0, "est_wt_kg": 40601122, "ship_wt_kg": 7520060.0, "year": "115", "month": 10}];
+let s2Data = [{"plant": "4家合計", "ym": "114-01", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 15058900.0, "proc_wt": 14951000.0, "inv_shell": 5387840.0, "asr_prod": 304110.0, "asrdf_prod": 2507435.0, "asr_ship": 436780.0, "asrdf_ship": 2449890.0, "inv_asr": 666930.0, "inv_asrdf": 275891.0, "year": "114", "month": 1}, {"plant": "4家合計", "ym": "114-02", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 15677290.0, "proc_wt": 14965930.0, "inv_shell": 6123400.0, "asr_prod": 445360.0, "asrdf_prod": 2473927.0, "asr_ship": 443710.0, "asrdf_ship": 2652760.0, "inv_asr": 668580.0, "inv_asrdf": 182828.0, "year": "114", "month": 2}, {"plant": "4家合計", "ym": "114-03", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 17662090.0, "proc_wt": 16881010.0, "inv_shell": 6936200.0, "asr_prod": 332430.0, "asrdf_prod": 2889373.0, "asr_ship": 564840.0, "asrdf_ship": 2881890.0, "inv_asr": 432920.0, "inv_asrdf": 211411.0, "year": "114", "month": 3}, {"plant": "4家合計", "ym": "114-04", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 16351800.0, "proc_wt": 17988220.0, "inv_shell": 5325920.0, "asr_prod": 712280.0, "asrdf_prod": 2619142.0, "asr_ship": 480000.0, "asrdf_ship": 2417080.0, "inv_asr": 660120.0, "inv_asrdf": 360693.0, "year": "114", "month": 4}, {"plant": "4家合計", "ym": "114-05", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 17523380.0, "proc_wt": 18019460.0, "inv_shell": 4851220.0, "asr_prod": 601570.0, "asrdf_prod": 2788567.0, "asr_ship": 685060.0, "asrdf_ship": 2778080.0, "inv_asr": 540710.0, "inv_asrdf": 385010.0, "year": "114", "month": 5}, {"plant": "4家合計", "ym": "114-06", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 17548310.0, "proc_wt": 18025510.0, "inv_shell": 4399870.0, "asr_prod": 166698.0, "asrdf_prod": 3586165.0, "asr_ship": 346370.0, "asrdf_ship": 3573530.0, "inv_asr": 393208.0, "inv_asrdf": 318935.0, "year": "114", "month": 6}, {"plant": "4家合計", "ym": "114-07", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 17862100.0, "proc_wt": 17462590.0, "inv_shell": 4828770.0, "asr_prod": 189912.0, "asrdf_prod": 3692202.0, "asr_ship": 292410.0, "asrdf_ship": 3823900.0, "inv_asr": 299530.0, "inv_asrdf": 282827.0, "year": "114", "month": 7}, {"plant": "4家合計", "ym": "114-08", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 17884640.0, "proc_wt": 16642040.0, "inv_shell": 6101550.0, "asr_prod": 188250.0, "asrdf_prod": 3284678.0, "asr_ship": 317040.0, "asrdf_ship": 3429980.0, "inv_asr": 165670.0, "inv_asrdf": 144565.0, "year": "114", "month": 8}, {"plant": "4家合計", "ym": "114-09", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 17784610.0, "proc_wt": 19190160.0, "inv_shell": 4723750.0, "asr_prod": 148590.0, "asrdf_prod": 3562150.0, "asr_ship": 317960.0, "asrdf_ship": 3565050.0, "inv_asr": 0.0, "inv_asrdf": 156695.0, "year": "114", "month": 9}, {"plant": "4家合計", "ym": "114-10", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 17085370.0, "proc_wt": 15224950.0, "inv_shell": 6612990.0, "asr_prod": 105680.0, "asrdf_prod": 2945507.0, "asr_ship": 105680.0, "asrdf_ship": 3043250.0, "inv_asr": 0.0, "inv_asrdf": 58952.0, "year": "114", "month": 10}, {"plant": "4家合計", "ym": "114-11", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 15825110.0, "proc_wt": 16996980.0, "inv_shell": 5470730.0, "asr_prod": 75360.0, "asrdf_prod": 3406492.0, "asr_ship": 59230.0, "asrdf_ship": 3273530.0, "inv_asr": 16130.0, "inv_asrdf": 191914.0, "year": "114", "month": 11}, {"plant": "4家合計", "ym": "114-12", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 17548670.0, "proc_wt": 17495760.0, "inv_shell": 5548090.0, "asr_prod": 54180.0, "asrdf_prod": 3449958.0, "asr_ship": 66290.0, "asrdf_ship": 3481340.0, "inv_asr": 0.0, "inv_asrdf": 160532.0, "year": "114", "month": 12}, {"plant": "4家合計", "ym": "115-01", "in_cert": 10359150.0, "in_noncert": 6898400.0, "in_tot": 17257550.0, "proc_wt": 16868320.0, "inv_shell": 5937320.0, "asr_prod": 110330.0, "asrdf_prod": 3394796.0, "asr_ship": 94050.0, "asrdf_ship": 3423400.0, "inv_asr": 16280.0, "inv_asrdf": 131928.0, "year": "115", "month": 1}, {"plant": "4家合計", "ym": "115-02", "in_cert": 6487420.0, "in_noncert": 6333880.0, "in_tot": 12821300.0, "proc_wt": 13418360.0, "inv_shell": 5340260.0, "asr_prod": 241890.0, "asrdf_prod": 2658896.0, "asr_ship": 122480.0, "asrdf_ship": 2372830.0, "inv_asr": 135690.0, "inv_asrdf": 417994.0, "year": "115", "month": 2}, {"plant": "4家合計", "ym": "115-03", "in_cert": 11464900.0, "in_noncert": 9414380.0, "in_tot": 20879280.0, "proc_wt": 18964710.0, "inv_shell": 7254830.0, "asr_prod": 101680.0, "asrdf_prod": 3871423.0, "asr_ship": 78470.0, "asrdf_ship": 4177590.0, "inv_asr": 26460.0, "inv_asrdf": 247517.0, "year": "115", "month": 3}, {"plant": "4家合計", "ym": "115-04", "in_cert": 9353490.0, "in_noncert": 8165140.0, "in_tot": 17518630.0, "proc_wt": 18612400.0, "inv_shell": 6161060.0, "asr_prod": 120880.0, "asrdf_prod": 3938040.0, "asr_ship": 127170.0, "asrdf_ship": 3727440.0, "inv_asr": 16920.0, "inv_asrdf": 458117.0, "year": "115", "month": 4}, {"plant": "4家合計", "ym": "115-05", "in_cert": 9021540.0, "in_noncert": 7997030.0, "in_tot": 17018570.0, "proc_wt": 16401410.0, "inv_shell": 6778220.0, "asr_prod": 104070.0, "asrdf_prod": 3508478.0, "asr_ship": 114040.0, "asrdf_ship": 3568840.0, "inv_asr": 42870.0, "inv_asrdf": 397755.0, "year": "115", "month": 5}, {"plant": "4家合計", "ym": "115-06", "in_cert": 9364670.0, "in_noncert": 8470330.0, "in_tot": 17835000.0, "proc_wt": 19725630.0, "inv_shell": 4887590.0, "asr_prod": 263120.0, "asrdf_prod": 4278042.0, "asr_ship": 252750.0, "asrdf_ship": 4295930.0, "inv_asr": 21070.0, "inv_asrdf": 379867.0, "year": "115", "month": 6}, {"plant": "4家合計", "ym": "115-07", "in_cert": 11448580.0, "in_noncert": 10333440.0, "in_tot": 21782020.0, "proc_wt": 20599440.0, "inv_shell": 6070170.0, "asr_prod": 181040.0, "asrdf_prod": 4364105.0, "asr_ship": 177570.0, "asrdf_ship": 4437900.0, "inv_asr": 15720.0, "inv_asrdf": 306072.0, "year": "115", "month": 7}, {"plant": "4家合計", "ym": "115-08", "in_cert": 9243120.0, "in_noncert": 8574440.0, "in_tot": 17817560.0, "proc_wt": 17908340.0, "inv_shell": 6041070.0, "asr_prod": 203590.0, "asrdf_prod": 3949901.0, "asr_ship": 186310.0, "asrdf_ship": 3245010.0, "inv_asr": 38070.0, "inv_asrdf": 1010963.0, "year": "115", "month": 8}, {"plant": "4家合計", "ym": "115-09", "in_cert": 8776510.0, "in_noncert": 7855400.0, "in_tot": 16631910.0, "proc_wt": 16584530.0, "inv_shell": 6088450.0, "asr_prod": 72400.0, "asrdf_prod": 3687715.0, "asr_ship": 101330.0, "asrdf_ship": 3772020.0, "inv_asr": 9140.0, "inv_asrdf": 926658.0, "year": "115", "month": 9}, {"plant": "4家合計", "ym": "115-10", "in_cert": 7520060.0, "in_noncert": 6483690.0, "in_tot": 14003750.0, "proc_wt": 15240900.0, "inv_shell": 4851300.0, "asr_prod": 403810.0, "asrdf_prod": 2549158.0, "asr_ship": 342100.0, "asrdf_ship": 1587710.0, "inv_asr": 132640.0, "inv_asrdf": 1947416.0, "year": "115", "month": 10}, {"plant": "帝壹統", "ym": "114-01", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 3596520.0, "proc_wt": 3805180.0, "inv_shell": 971870.0, "asr_prod": 0.0, "asrdf_prod": 728250.0, "asr_ship": 0.0, "asrdf_ship": 636770.0, "inv_asr": 0.0, "inv_asrdf": 0.0, "year": "114", "month": 1}, {"plant": "帝壹統", "ym": "114-02", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 3840930.0, "proc_wt": 4078990.0, "inv_shell": 733810.0, "asr_prod": 43090.0, "asrdf_prod": 780720.0, "asr_ship": 19960.0, "asrdf_ship": 866490.0, "inv_asr": 23130.0, "inv_asrdf": 0.0, "year": "114", "month": 2}, {"plant": "帝壹統", "ym": "114-03", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4332190.0, "proc_wt": 3815120.0, "inv_shell": 1250880.0, "asr_prod": 3380.0, "asrdf_prod": 813810.0, "asr_ship": 0.0, "asrdf_ship": 834910.0, "inv_asr": 26510.0, "inv_asrdf": 0.0, "year": "114", "month": 3}, {"plant": "帝壹統", "ym": "114-04", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4823260.0, "proc_wt": 5078310.0, "inv_shell": 995830.0, "asr_prod": 123130.0, "asrdf_prod": 836790.0, "asr_ship": 18260.0, "asrdf_ship": 784010.0, "inv_asr": 131380.0, "inv_asrdf": 0.0, "year": "114", "month": 4}, {"plant": "帝壹統", "ym": "114-05", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4617240.0, "proc_wt": 4203380.0, "inv_shell": 1409690.0, "asr_prod": 109910.0, "asrdf_prod": 690430.0, "asr_ship": 104140.0, "asrdf_ship": 704260.0, "inv_asr": 137150.0, "inv_asrdf": 0.0, "year": "114", "month": 5}, {"plant": "帝壹統", "ym": "114-06", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4016090.0, "proc_wt": 4217530.0, "inv_shell": 1208250.0, "asr_prod": 71510.0, "asrdf_prod": 777910.0, "asr_ship": 208660.0, "asrdf_ship": 699200.0, "inv_asr": 0.0, "inv_asrdf": 0.0, "year": "114", "month": 6}, {"plant": "帝壹統", "ym": "114-07", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 3963030.0, "proc_wt": 3097540.0, "inv_shell": 2073740.0, "asr_prod": 54230.0, "asrdf_prod": 614410.0, "asr_ship": 54230.0, "asrdf_ship": 710000.0, "inv_asr": 0.0, "inv_asrdf": 0.0, "year": "114", "month": 7}, {"plant": "帝壹統", "ym": "114-08", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4500510.0, "proc_wt": 4969210.0, "inv_shell": 1605040.0, "asr_prod": 132510.0, "asrdf_prod": 893020.0, "asr_ship": 121320.0, "asrdf_ship": 900060.0, "inv_asr": 11190.0, "inv_asrdf": 0.0, "year": "114", "month": 8}, {"plant": "帝壹統", "ym": "114-09", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4551630.0, "proc_wt": 5430080.0, "inv_shell": 726590.0, "asr_prod": 92990.0, "asrdf_prod": 895560.0, "asr_ship": 104180.0, "asrdf_ship": 910590.0, "inv_asr": 0.0, "inv_asrdf": 0.0, "year": "114", "month": 9}, {"plant": "帝壹統", "ym": "114-10", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4692370.0, "proc_wt": 3985120.0, "inv_shell": 1433840.0, "asr_prod": 48530.0, "asrdf_prod": 680520.0, "asr_ship": 48530.0, "asrdf_ship": 554560.0, "inv_asr": 0.0, "inv_asrdf": 0.0, "year": "114", "month": 10}, {"plant": "帝壹統", "ym": "114-11", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4649920.0, "proc_wt": 4631940.0, "inv_shell": 1451820.0, "asr_prod": 16130.0, "asrdf_prod": 852860.0, "asr_ship": 0.0, "asrdf_ship": 743950.0, "inv_asr": 16130.0, "inv_asrdf": 108910.0, "year": "114", "month": 11}, {"plant": "帝壹統", "ym": "114-12", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 5231720.0, "proc_wt": 5003120.0, "inv_shell": 1680420.0, "asr_prod": 1920.0, "asrdf_prod": 885280.0, "asr_ship": 18050.0, "asrdf_ship": 994190.0, "inv_asr": 0.0, "inv_asrdf": 0.0, "year": "114", "month": 12}, {"plant": "帝壹統", "ym": "115-01", "in_cert": 2556220.0, "in_noncert": 2596490.0, "in_tot": 5152710.0, "proc_wt": 4920350.0, "inv_shell": 1912780.0, "asr_prod": 28360.0, "asrdf_prod": 889220.0, "asr_ship": 28360.0, "asrdf_ship": 889220.0, "inv_asr": 0.0, "inv_asrdf": 0.0, "year": "115", "month": 1}, {"plant": "帝壹統", "ym": "115-02", "in_cert": 1448700.0, "in_noncert": 2084460.0, "in_tot": 3533160.0, "proc_wt": 3756800.0, "inv_shell": 1689140.0, "asr_prod": 14470.0, "asrdf_prod": 756960.0, "asr_ship": 14470.0, "asrdf_ship": 734280.0, "inv_asr": 0.0, "inv_asrdf": 22680.0, "year": "115", "month": 2}, {"plant": "帝壹統", "ym": "115-03", "in_cert": 2576030.0, "in_noncert": 2715910.0, "in_tot": 5291940.0, "proc_wt": 5142440.0, "inv_shell": 1838640.0, "asr_prod": 31260.0, "asrdf_prod": 904740.0, "asr_ship": 16660.0, "asrdf_ship": 927420.0, "inv_asr": 14600.0, "inv_asrdf": 0.0, "year": "115", "month": 3}, {"plant": "帝壹統", "ym": "115-04", "in_cert": 1637480.0, "in_noncert": 2838110.0, "in_tot": 4475590.0, "proc_wt": 4384660.0, "inv_shell": 1929570.0, "asr_prod": 47760.0, "asrdf_prod": 877360.0, "asr_ship": 45440.0, "asrdf_ship": 877360.0, "inv_asr": 16920.0, "inv_asrdf": 0.0, "year": "115", "month": 4}, {"plant": "帝壹統", "ym": "115-05", "in_cert": 2726060.0, "in_noncert": 1687960.0, "in_tot": 4414020.0, "proc_wt": 4838500.0, "inv_shell": 1505090.0, "asr_prod": 46270.0, "asrdf_prod": 930300.0, "asr_ship": 63190.0, "asrdf_ship": 712080.0, "inv_asr": 0.0, "inv_asrdf": 218220.0, "year": "115", "month": 5}, {"plant": "帝壹統", "ym": "115-06", "in_cert": 2235600.0, "in_noncert": 2413640.0, "in_tot": 4649240.0, "proc_wt": 4867560.0, "inv_shell": 1286770.0, "asr_prod": 184950.0, "asrdf_prod": 771840.0, "asr_ship": 167630.0, "asrdf_ship": 990060.0, "inv_asr": 17320.0, "inv_asrdf": 0.0, "year": "115", "month": 6}, {"plant": "帝壹統", "ym": "115-07", "in_cert": 2283090.0, "in_noncert": 2848030.0, "in_tot": 5131120.0, "proc_wt": 5023050.0, "inv_shell": 1394840.0, "asr_prod": 49460.0, "asrdf_prod": 893590.0, "asr_ship": 51060.0, "asrdf_ship": 893590.0, "inv_asr": 15720.0, "inv_asrdf": 0.0, "year": "115", "month": 7}, {"plant": "帝壹統", "ym": "115-08", "in_cert": 1670390.0, "in_noncert": 2616510.0, "in_tot": 4286900.0, "proc_wt": 4474350.0, "inv_shell": 1269070.0, "asr_prod": 74100.0, "asrdf_prod": 836530.0, "asr_ship": 51750.0, "asrdf_ship": 836530.0, "inv_asr": 38070.0, "inv_asrdf": 0.0, "year": "115", "month": 8}, {"plant": "帝壹統", "ym": "115-09", "in_cert": 2588520.0, "in_noncert": 2122890.0, "in_tot": 4711410.0, "proc_wt": 4404910.0, "inv_shell": 1575570.0, "asr_prod": 4240.0, "asrdf_prod": 978350.0, "asr_ship": 33170.0, "asrdf_ship": 978350.0, "inv_asr": 9140.0, "inv_asrdf": 0.0, "year": "115", "month": 9}, {"plant": "帝壹統", "ym": "115-10", "in_cert": 2234480.0, "in_noncert": 2084850.0, "in_tot": 4319330.0, "proc_wt": 4509060.0, "inv_shell": 1385840.0, "asr_prod": 50340.0, "asrdf_prod": 688190.0, "asr_ship": 44200.0, "asrdf_ship": 612040.0, "inv_asr": 15280.0, "inv_asrdf": 76150.0, "year": "115", "month": 10}, {"plant": "集合成", "ym": "114-01", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 3535270.0, "proc_wt": 3452110.0, "inv_shell": 844700.0, "asr_prod": 34680.0, "asrdf_prod": 465325.0, "asr_ship": 39500.0, "asrdf_ship": 588650.0, "inv_asr": 2530.0, "inv_asrdf": 98811.0, "year": "114", "month": 1}, {"plant": "集合成", "ym": "114-02", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4110980.0, "proc_wt": 3113370.0, "inv_shell": 1842310.0, "asr_prod": 28610.0, "asrdf_prod": 546787.0, "asr_ship": 30620.0, "asrdf_ship": 609420.0, "inv_asr": 520.0, "inv_asrdf": 64268.0, "year": "114", "month": 2}, {"plant": "集合成", "ym": "114-03", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4341580.0, "proc_wt": 4675280.0, "inv_shell": 1508610.0, "asr_prod": 42060.0, "asrdf_prod": 816963.0, "asr_ship": 40430.0, "asrdf_ship": 783460.0, "inv_asr": 2150.0, "inv_asrdf": 137681.0, "year": "114", "month": 3}, {"plant": "集合成", "ym": "114-04", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4332890.0, "proc_wt": 5089430.0, "inv_shell": 752070.0, "asr_prod": 62730.0, "asrdf_prod": 775792.0, "asr_ship": 64880.0, "asrdf_ship": 689930.0, "inv_asr": 0.0, "inv_asrdf": 223543.0, "year": "114", "month": 4}, {"plant": "集合成", "ym": "114-05", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4343910.0, "proc_wt": 4203670.0, "inv_shell": 892310.0, "asr_prod": 35370.0, "asrdf_prod": 746227.0, "asr_ship": 35370.0, "asrdf_ship": 890930.0, "inv_asr": 0.0, "inv_asrdf": 114210.0, "year": "114", "month": 5}, {"plant": "集合成", "ym": "114-06", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4323310.0, "proc_wt": 4612470.0, "inv_shell": 603150.0, "asr_prod": 39358.0, "asrdf_prod": 844227.0, "asr_ship": 38730.0, "asrdf_ship": 875372.0, "inv_asr": 628.0, "inv_asrdf": 121795.0, "year": "114", "month": 6}, {"plant": "集合成", "ym": "114-07", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4441840.0, "proc_wt": 4389750.0, "inv_shell": 787890.0, "asr_prod": 62392.0, "asrdf_prod": 828650.0, "asr_ship": 48650.0, "asrdf_ship": 790350.0, "inv_asr": 14370.0, "inv_asrdf": 208117.0, "year": "114", "month": 7}, {"plant": "集合成", "ym": "114-08", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4093980.0, "proc_wt": 4074990.0, "inv_shell": 806880.0, "asr_prod": 27590.0, "asrdf_prod": 732008.0, "asr_ship": 37140.0, "asrdf_ship": 879190.0, "inv_asr": 4820.0, "inv_asrdf": 83705.0, "year": "114", "month": 8}, {"plant": "集合成", "ym": "114-09", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4141370.0, "proc_wt": 4188320.0, "inv_shell": 759930.0, "asr_prod": 26270.0, "asrdf_prod": 753530.0, "asr_ship": 31090.0, "asrdf_ship": 782470.0, "inv_asr": 0.0, "inv_asrdf": 81035.0, "year": "114", "month": 9}, {"plant": "集合成", "ym": "114-10", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 2894950.0, "proc_wt": 2186520.0, "inv_shell": 1468360.0, "asr_prod": 37260.0, "asrdf_prod": 365147.0, "asr_ship": 37260.0, "asrdf_ship": 443750.0, "inv_asr": 0.0, "inv_asrdf": 2432.0, "year": "114", "month": 10}, {"plant": "集合成", "ym": "114-11", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 3960320.0, "proc_wt": 4359630.0, "inv_shell": 1069050.0, "asr_prod": 39900.0, "asrdf_prod": 876542.0, "asr_ship": 39900.0, "asrdf_ship": 847750.0, "inv_asr": 0.0, "inv_asrdf": 71124.0, "year": "114", "month": 11}, {"plant": "集合成", "ym": "114-12", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4954970.0, "proc_wt": 5121100.0, "inv_shell": 902920.0, "asr_prod": 36980.0, "asrdf_prod": 1074808.0, "asr_ship": 36980.0, "asrdf_ship": 1119710.0, "inv_asr": 0.0, "inv_asrdf": 26222.0, "year": "114", "month": 12}, {"plant": "集合成", "ym": "115-01", "in_cert": 4402720.0, "in_noncert": 585010.0, "in_tot": 4987730.0, "proc_wt": 5168740.0, "inv_shell": 721910.0, "asr_prod": 34380.0, "asrdf_prod": 1098966.0, "asr_ship": 34380.0, "asrdf_ship": 1088780.0, "inv_asr": 0.0, "inv_asrdf": 36408.0, "year": "115", "month": 1}, {"plant": "集合成", "ym": "115-02", "in_cert": 2723240.0, "in_noncert": 398880.0, "in_tot": 3122120.0, "proc_wt": 3348810.0, "inv_shell": 495220.0, "asr_prod": 25600.0, "asrdf_prod": 698546.0, "asr_ship": 25600.0, "asrdf_ship": 574270.0, "inv_asr": 0.0, "inv_asrdf": 160684.0, "year": "115", "month": 2}, {"plant": "集合成", "ym": "115-03", "in_cert": 4623780.0, "in_noncert": 687690.0, "in_tot": 5311470.0, "proc_wt": 4888450.0, "inv_shell": 918240.0, "asr_prod": 38610.0, "asrdf_prod": 1024323.0, "asr_ship": 38610.0, "asrdf_ship": 1057200.0, "inv_asr": 0.0, "inv_asrdf": 127807.0, "year": "115", "month": 3}, {"plant": "集合成", "ym": "115-04", "in_cert": 4590120.0, "in_noncert": 576750.0, "in_tot": 5166870.0, "proc_wt": 5032930.0, "inv_shell": 1052180.0, "asr_prod": 43890.0, "asrdf_prod": 1095470.0, "asr_ship": 43890.0, "asrdf_ship": 1064610.0, "inv_asr": 0.0, "inv_asrdf": 158667.0, "year": "115", "month": 4}, {"plant": "集合成", "ym": "115-05", "in_cert": 3425320.0, "in_noncert": 515250.0, "in_tot": 3940570.0, "proc_wt": 3756800.0, "inv_shell": 1235950.0, "asr_prod": 27200.0, "asrdf_prod": 841978.0, "asr_ship": 20250.0, "asrdf_ship": 863550.0, "inv_asr": 6950.0, "inv_asrdf": 137095.0, "year": "115", "month": 5}, {"plant": "集合成", "ym": "115-06", "in_cert": 3870800.0, "in_noncert": 701560.0, "in_tot": 4572360.0, "proc_wt": 5033410.0, "inv_shell": 774900.0, "asr_prod": 51790.0, "asrdf_prod": 1166042.0, "asr_ship": 58740.0, "asrdf_ship": 1284080.0, "inv_asr": 0.0, "inv_asrdf": 19057.0, "year": "115", "month": 6}, {"plant": "集合成", "ym": "115-07", "in_cert": 4951000.0, "in_noncert": 696730.0, "in_tot": 5647730.0, "proc_wt": 5295300.0, "inv_shell": 1127330.0, "asr_prod": 38380.0, "asrdf_prod": 1139525.0, "asr_ship": 38380.0, "asrdf_ship": 1105380.0, "inv_asr": 0.0, "inv_asrdf": 53202.0, "year": "115", "month": 7}, {"plant": "集合成", "ym": "115-08", "in_cert": 4381370.0, "in_noncert": 661930.0, "in_tot": 5043300.0, "proc_wt": 5297930.0, "inv_shell": 872700.0, "asr_prod": 39420.0, "asrdf_prod": 1176071.0, "asr_ship": 39420.0, "asrdf_ship": 845630.0, "inv_asr": 0.0, "inv_asrdf": 383643.0, "year": "115", "month": 8}, {"plant": "集合成", "ym": "115-09", "in_cert": 3713410.0, "in_noncert": 583390.0, "in_tot": 4296800.0, "proc_wt": 4450880.0, "inv_shell": 718620.0, "asr_prod": 39810.0, "asrdf_prod": 968755.0, "asr_ship": 39810.0, "asrdf_ship": 1183320.0, "inv_asr": 0.0, "inv_asrdf": 169078.0, "year": "115", "month": 9}, {"plant": "集合成", "ym": "115-10", "in_cert": 3205770.0, "in_noncert": 422620.0, "in_tot": 3628390.0, "proc_wt": 3709990.0, "inv_shell": 637020.0, "asr_prod": 256120.0, "asrdf_prod": 541778.0, "asr_ship": 138760.0, "asrdf_ship": 173830.0, "inv_asr": 117360.0, "inv_asrdf": 537026.0, "year": "115", "month": 10}, {"plant": "綠化", "ym": "114-01", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 3568190.0, "proc_wt": 3357050.0, "inv_shell": 1581270.0, "asr_prod": 258870.0, "asrdf_prod": 367230.0, "asr_ship": 380190.0, "asrdf_ship": 324350.0, "inv_asr": 664400.0, "inv_asrdf": 42880.0, "year": "114", "month": 1}, {"plant": "綠化", "ym": "114-02", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 3875160.0, "proc_wt": 4026290.0, "inv_shell": 1430140.0, "asr_prod": 358640.0, "asrdf_prod": 417780.0, "asr_ship": 378110.0, "asrdf_ship": 436120.0, "inv_asr": 644930.0, "inv_asrdf": 24540.0, "year": "114", "month": 2}, {"plant": "綠化", "ym": "114-03", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4515040.0, "proc_wt": 4084410.0, "inv_shell": 1860770.0, "asr_prod": 275130.0, "asrdf_prod": 429480.0, "asr_ship": 524410.0, "asrdf_ship": 441500.0, "inv_asr": 395650.0, "inv_asrdf": 12520.0, "year": "114", "month": 3}, {"plant": "綠化", "ym": "114-04", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4335050.0, "proc_wt": 4708070.0, "inv_shell": 1487750.0, "asr_prod": 507920.0, "asrdf_prod": 349820.0, "asr_ship": 366500.0, "asrdf_ship": 362340.0, "inv_asr": 528740.0, "inv_asrdf": 0.0, "year": "114", "month": 4}, {"plant": "綠化", "ym": "114-05", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4205480.0, "proc_wt": 4573160.0, "inv_shell": 1120070.0, "asr_prod": 373540.0, "asrdf_prod": 484610.0, "asr_ship": 498720.0, "asrdf_ship": 464120.0, "inv_asr": 403560.0, "inv_asrdf": 20490.0, "year": "114", "month": 5}, {"plant": "綠化", "ym": "114-06", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4449200.0, "proc_wt": 4188820.0, "inv_shell": 1380450.0, "asr_prod": 23200.0, "asrdf_prod": 878240.0, "asr_ship": 34180.0, "asrdf_ship": 835600.0, "inv_asr": 392580.0, "inv_asrdf": 63130.0, "year": "114", "month": 6}, {"plant": "綠化", "ym": "114-07", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4912130.0, "proc_wt": 4899840.0, "inv_shell": 922450.0, "asr_prod": 29730.0, "asrdf_prod": 1047310.0, "asr_ship": 142220.0, "asrdf_ship": 1080360.0, "inv_asr": 280090.0, "inv_asrdf": 30080.0, "year": "114", "month": 7}, {"plant": "綠化", "ym": "114-08", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4258690.0, "proc_wt": 3495790.0, "inv_shell": 1685350.0, "asr_prod": 17610.0, "asrdf_prod": 728870.0, "asr_ship": 148040.0, "asrdf_ship": 698090.0, "inv_asr": 149660.0, "inv_asrdf": 60860.0, "year": "114", "month": 8}, {"plant": "綠化", "ym": "114-09", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4596580.0, "proc_wt": 4524990.0, "inv_shell": 1756940.0, "asr_prod": 19240.0, "asrdf_prod": 908940.0, "asr_ship": 166550.0, "asrdf_ship": 894140.0, "inv_asr": 0.0, "inv_asrdf": 75660.0, "year": "114", "month": 9}, {"plant": "綠化", "ym": "114-10", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4238480.0, "proc_wt": 4004500.0, "inv_shell": 1990920.0, "asr_prod": 11550.0, "asrdf_prod": 815170.0, "asr_ship": 11550.0, "asrdf_ship": 834310.0, "inv_asr": 0.0, "inv_asrdf": 56520.0, "year": "114", "month": 10}, {"plant": "綠化", "ym": "114-11", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 3559030.0, "proc_wt": 3953730.0, "inv_shell": 1596220.0, "asr_prod": 10920.0, "asrdf_prod": 817360.0, "asr_ship": 10920.0, "asrdf_ship": 862000.0, "inv_asr": 0.0, "inv_asrdf": 11880.0, "year": "114", "month": 11}, {"plant": "綠化", "ym": "114-12", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 3769260.0, "proc_wt": 4347350.0, "inv_shell": 1018130.0, "asr_prod": 11260.0, "asrdf_prod": 868200.0, "asr_ship": 11260.0, "asrdf_ship": 862060.0, "inv_asr": 0.0, "inv_asrdf": 18020.0, "year": "114", "month": 12}, {"plant": "綠化", "ym": "115-01", "in_cert": 1492700.0, "in_noncert": 1292260.0, "in_tot": 2784960.0, "proc_wt": 1757600.0, "inv_shell": 2045490.0, "asr_prod": 16280.0, "asrdf_prod": 353400.0, "asr_ship": 0.0, "asrdf_ship": 357380.0, "inv_asr": 16280.0, "inv_asrdf": 14040.0, "year": "115", "month": 1}, {"plant": "綠化", "ym": "115-02", "in_cert": 968110.0, "in_noncert": 1162570.0, "in_tot": 2130680.0, "proc_wt": 2306370.0, "inv_shell": 1869800.0, "asr_prod": 119410.0, "asrdf_prod": 366610.0, "asr_ship": 0.0, "asrdf_ship": 357230.0, "inv_asr": 135690.0, "inv_asrdf": 23420.0, "year": "115", "month": 2}, {"plant": "綠化", "ym": "115-03", "in_cert": 2767530.0, "in_noncert": 2485640.0, "in_tot": 5253170.0, "proc_wt": 5197490.0, "inv_shell": 1925480.0, "asr_prod": 23200.0, "asrdf_prod": 1135670.0, "asr_ship": 23200.0, "asrdf_ship": 1204370.0, "inv_asr": 0.0, "inv_asrdf": 90410.0, "year": "115", "month": 3}, {"plant": "綠化", "ym": "115-04", "in_cert": 2157170.0, "in_noncert": 2498800.0, "in_tot": 4655970.0, "proc_wt": 5176340.0, "inv_shell": 1405110.0, "asr_prod": 18070.0, "asrdf_prod": 1119670.0, "asr_ship": 18070.0, "asrdf_ship": 944610.0, "inv_asr": 0.0, "inv_asrdf": 265470.0, "year": "115", "month": 4}, {"plant": "綠化", "ym": "115-05", "in_cert": 2231320.0, "in_noncert": 2592110.0, "in_tot": 4823430.0, "proc_wt": 4295620.0, "inv_shell": 1932920.0, "asr_prod": 12270.0, "asrdf_prod": 911240.0, "asr_ship": 12270.0, "asrdf_ship": 1158800.0, "inv_asr": 0.0, "inv_asrdf": 17910.0, "year": "115", "month": 5}, {"plant": "綠化", "ym": "115-06", "in_cert": 2166790.0, "in_noncert": 2914100.0, "in_tot": 5080890.0, "proc_wt": 5012550.0, "inv_shell": 2001260.0, "asr_prod": 12430.0, "asrdf_prod": 1195680.0, "asr_ship": 12430.0, "asrdf_ship": 1168790.0, "inv_asr": 0.0, "inv_asrdf": 44800.0, "year": "115", "month": 6}, {"plant": "綠化", "ym": "115-07", "in_cert": 2355020.0, "in_noncert": 3319310.0, "in_tot": 5674330.0, "proc_wt": 5826940.0, "inv_shell": 1848650.0, "asr_prod": 23280.0, "asrdf_prod": 1230550.0, "asr_ship": 23280.0, "asrdf_ship": 1222140.0, "inv_asr": 0.0, "inv_asrdf": 53210.0, "year": "115", "month": 7}, {"plant": "綠化", "ym": "115-08", "in_cert": 1772740.0, "in_noncert": 2378200.0, "in_tot": 4150940.0, "proc_wt": 3425000.0, "inv_shell": 2574590.0, "asr_prod": 18470.0, "asrdf_prod": 764840.0, "asr_ship": 18470.0, "asrdf_ship": 346640.0, "inv_asr": 0.0, "inv_asrdf": 471410.0, "year": "115", "month": 8}, {"plant": "綠化", "ym": "115-09", "in_cert": 1895820.0, "in_noncert": 1940220.0, "in_tot": 3836040.0, "proc_wt": 4035060.0, "inv_shell": 2375570.0, "asr_prod": 18200.0, "asrdf_prod": 818610.0, "asr_ship": 18200.0, "asrdf_ship": 716860.0, "inv_asr": 0.0, "inv_asrdf": 573160.0, "year": "115", "month": 9}, {"plant": "綠化", "ym": "115-10", "in_cert": 866540.0, "in_noncert": 1036520.0, "in_tot": 1903060.0, "proc_wt": 2791080.0, "inv_shell": 1487550.0, "asr_prod": 17780.0, "asrdf_prod": 512390.0, "asr_ship": 79570.0, "asrdf_ship": 400920.0, "inv_asr": 0.0, "inv_asrdf": 743940.0, "year": "115", "month": 10}, {"plant": "巨基", "ym": "114-01", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4382850.0, "proc_wt": 4336660.0, "inv_shell": 1990000.0, "asr_prod": 10560.0, "asrdf_prod": 946630.0, "asr_ship": 17090.0, "asrdf_ship": 1013240.0, "inv_asr": 0.0, "inv_asrdf": 134200.0, "year": "114", "month": 1}, {"plant": "巨基", "ym": "114-02", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 3874420.0, "proc_wt": 3747280.0, "inv_shell": 2117140.0, "asr_prod": 15020.0, "asrdf_prod": 839270.0, "asr_ship": 15020.0, "asrdf_ship": 879450.0, "inv_asr": 0.0, "inv_asrdf": 94020.0, "year": "114", "month": 2}, {"plant": "巨基", "ym": "114-03", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4505000.0, "proc_wt": 4306200.0, "inv_shell": 2315940.0, "asr_prod": 11860.0, "asrdf_prod": 863980.0, "asr_ship": 0.0, "asrdf_ship": 896790.0, "inv_asr": 8610.0, "inv_asrdf": 61210.0, "year": "114", "month": 3}, {"plant": "巨基", "ym": "114-04", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 2886740.0, "proc_wt": 3112410.0, "inv_shell": 2090270.0, "asr_prod": 18500.0, "asrdf_prod": 656740.0, "asr_ship": 30360.0, "asrdf_ship": 580800.0, "inv_asr": 0.0, "inv_asrdf": 137150.0, "year": "114", "month": 4}, {"plant": "巨基", "ym": "114-05", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4378130.0, "proc_wt": 5039250.0, "inv_shell": 1429150.0, "asr_prod": 82750.0, "asrdf_prod": 951680.0, "asr_ship": 46830.0, "asrdf_ship": 838520.0, "inv_asr": 0.0, "inv_asrdf": 250310.0, "year": "114", "month": 5}, {"plant": "巨基", "ym": "114-06", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4785560.0, "proc_wt": 5006690.0, "inv_shell": 1208020.0, "asr_prod": 32630.0, "asrdf_prod": 1147260.0, "asr_ship": 64800.0, "asrdf_ship": 1263560.0, "inv_asr": 0.0, "inv_asrdf": 134010.0, "year": "114", "month": 6}, {"plant": "巨基", "ym": "114-07", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4574490.0, "proc_wt": 5075460.0, "inv_shell": 1044690.0, "asr_prod": 43560.0, "asrdf_prod": 1221340.0, "asr_ship": 47310.0, "asrdf_ship": 1310720.0, "inv_asr": 5070.0, "inv_asrdf": 44630.0, "year": "114", "month": 7}, {"plant": "巨基", "ym": "114-08", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 5061640.0, "proc_wt": 4102050.0, "inv_shell": 2004280.0, "asr_prod": 10540.0, "asrdf_prod": 970340.0, "asr_ship": 10540.0, "asrdf_ship": 1014970.0, "inv_asr": 0.0, "inv_asrdf": 0.0, "year": "114", "month": 8}, {"plant": "巨基", "ym": "114-09", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 4522780.0, "proc_wt": 5046770.0, "inv_shell": 1480290.0, "asr_prod": 10090.0, "asrdf_prod": 1061400.0, "asr_ship": 10090.0, "asrdf_ship": 1061400.0, "inv_asr": 0.0, "inv_asrdf": 0.0, "year": "114", "month": 9}, {"plant": "巨基", "ym": "114-10", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 5288390.0, "proc_wt": 5048810.0, "inv_shell": 1719870.0, "asr_prod": 8340.0, "asrdf_prod": 1084670.0, "asr_ship": 8340.0, "asrdf_ship": 1084670.0, "inv_asr": 0.0, "inv_asrdf": 0.0, "year": "114", "month": 10}, {"plant": "巨基", "ym": "114-11", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 3685450.0, "proc_wt": 4051680.0, "inv_shell": 1353640.0, "asr_prod": 8410.0, "asrdf_prod": 871550.0, "asr_ship": 8410.0, "asrdf_ship": 871550.0, "inv_asr": 0.0, "inv_asrdf": 0.0, "year": "114", "month": 11}, {"plant": "巨基", "ym": "114-12", "in_cert": 0.0, "in_noncert": 0.0, "in_tot": 3617170.0, "proc_wt": 3024190.0, "inv_shell": 1946620.0, "asr_prod": 4020.0, "asrdf_prod": 621670.0, "asr_ship": 0.0, "asrdf_ship": 505380.0, "inv_asr": 0.0, "inv_asrdf": 116290.0, "year": "114", "month": 12}, {"plant": "巨基", "ym": "115-01", "in_cert": 1907510.0, "in_noncert": 2424640.0, "in_tot": 4332150.0, "proc_wt": 5021630.0, "inv_shell": 1257140.0, "asr_prod": 31310.0, "asrdf_prod": 1053210.0, "asr_ship": 31310.0, "asrdf_ship": 1088020.0, "inv_asr": 0.0, "inv_asrdf": 81480.0, "year": "115", "month": 1}, {"plant": "巨基", "ym": "115-02", "in_cert": 1347370.0, "in_noncert": 2687970.0, "in_tot": 4035340.0, "proc_wt": 4006380.0, "inv_shell": 1286100.0, "asr_prod": 82410.0, "asrdf_prod": 836780.0, "asr_ship": 82410.0, "asrdf_ship": 707050.0, "inv_asr": 0.0, "inv_asrdf": 211210.0, "year": "115", "month": 2}, {"plant": "巨基", "ym": "115-03", "in_cert": 1497560.0, "in_noncert": 3525140.0, "in_tot": 5022700.0, "proc_wt": 3736330.0, "inv_shell": 2572470.0, "asr_prod": 8610.0, "asrdf_prod": 806690.0, "asr_ship": 0.0, "asrdf_ship": 988600.0, "inv_asr": 11860.0, "inv_asrdf": 29300.0, "year": "115", "month": 3}, {"plant": "巨基", "ym": "115-04", "in_cert": 968720.0, "in_noncert": 2251480.0, "in_tot": 3220200.0, "proc_wt": 4018470.0, "inv_shell": 1774200.0, "asr_prod": 11160.0, "asrdf_prod": 845540.0, "asr_ship": 19770.0, "asrdf_ship": 840860.0, "inv_asr": 0.0, "inv_asrdf": 33980.0, "year": "115", "month": 4}, {"plant": "巨基", "ym": "115-05", "in_cert": 638840.0, "in_noncert": 3201710.0, "in_tot": 3840550.0, "proc_wt": 3510490.0, "inv_shell": 2104260.0, "asr_prod": 18330.0, "asrdf_prod": 824960.0, "asr_ship": 18330.0, "asrdf_ship": 834410.0, "inv_asr": 35920.0, "inv_asrdf": 24530.0, "year": "115", "month": 5}, {"plant": "巨基", "ym": "115-06", "in_cert": 1091480.0, "in_noncert": 2441030.0, "in_tot": 3532510.0, "proc_wt": 4812110.0, "inv_shell": 824660.0, "asr_prod": 13950.0, "asrdf_prod": 1144480.0, "asr_ship": 13950.0, "asrdf_ship": 853000.0, "inv_asr": 3750.0, "inv_asrdf": 316010.0, "year": "115", "month": 6}, {"plant": "巨基", "ym": "115-07", "in_cert": 1859470.0, "in_noncert": 3469370.0, "in_tot": 5328840.0, "proc_wt": 4454150.0, "inv_shell": 1699350.0, "asr_prod": 69920.0, "asrdf_prod": 1100440.0, "asr_ship": 64850.0, "asrdf_ship": 1216790.0, "inv_asr": 0.0, "inv_asrdf": 199660.0, "year": "115", "month": 7}, {"plant": "巨基", "ym": "115-08", "in_cert": 1418620.0, "in_noncert": 2917800.0, "in_tot": 4336420.0, "proc_wt": 4711060.0, "inv_shell": 1324710.0, "asr_prod": 71600.0, "asrdf_prod": 1172460.0, "asr_ship": 76670.0, "asrdf_ship": 1216210.0, "inv_asr": 0.0, "inv_asrdf": 155910.0, "year": "115", "month": 8}, {"plant": "巨基", "ym": "115-09", "in_cert": 578760.0, "in_noncert": 3208900.0, "in_tot": 3787660.0, "proc_wt": 3693680.0, "inv_shell": 1418690.0, "asr_prod": 10150.0, "asrdf_prod": 922000.0, "asr_ship": 10150.0, "asrdf_ship": 893490.0, "inv_asr": 0.0, "inv_asrdf": 184420.0, "year": "115", "month": 9}, {"plant": "巨基", "ym": "115-10", "in_cert": 1213270.0, "in_noncert": 2939700.0, "in_tot": 4152970.0, "proc_wt": 4230770.0, "inv_shell": 1340890.0, "asr_prod": 79570.0, "asrdf_prod": 806800.0, "asr_ship": 79570.0, "asrdf_ship": 400920.0, "inv_asr": 0.0, "inv_asrdf": 590300.0, "year": "115", "month": 10}];
+
+const PLANTS = ['帝壹統', '集合成', '綠化', '巨基'];
+let charts = {};
+
+function fmtNum(val, dec = 0) {
+  return Number(val || 0).toLocaleString('zh-TW', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+}
+
+function initMonthSelector() {
+  const sel = document.getElementById('monthSelect');
+  const months115 = s1Data.filter(d => d.year === '115').map(d => d.month).sort((a,b)=>a-b);
+  const maxM = months115.length ? Math.max(...months115) : 10;
+  sel.innerHTML = '';
+  for (let m = maxM; m >= 1; m--) {
+    const opt = document.createElement('option');
+    opt.value = m;
+    opt.textContent = m === maxM ? `截至最新 ${m} 月 (1-${m}月)` : `截至 ${m} 月 (1-${m}月)`;
+    sel.appendChild(opt);
+  }
+}
+
+function getFilteredPeriods() {
+  const mode = document.getElementById('modeSelect').value;
+  const maxM = parseInt(document.getElementById('monthSelect').value, 10);
+
+  let curr115 = s1Data.filter(d => d.year === '115' && d.month <= maxM);
+  let base114 = mode === 'yoy_sync'
+    ? s1Data.filter(d => d.year === '114' && d.month <= maxM)
+    : s1Data.filter(d => d.year === '114');
+
+  let timeline = [];
+  if (mode === 'only_115') {
+    timeline = s1Data.filter(d => d.year === '115' && d.month <= maxM);
+  } else if (mode === 'only_114') {
+    timeline = s1Data.filter(d => d.year === '114');
+  } else if (mode === 'yoy_sync') {
+    timeline = s1Data.filter(d => (d.year === '114' || d.year === '115') && d.month <= maxM);
+  } else {
+    timeline = s1Data.filter(d => d.year === '114' || (d.year === '115' && d.month <= maxM));
+  }
+  return { mode, maxM, curr115, base114, timeline };
+}
+
+function renderDashboard() {
+  const { mode, maxM, curr115, base114, timeline } = getFilteredPeriods();
+  const plant = document.getElementById('plantSelect').value;
+
+  const targetYear = mode === 'only_114' ? '114' : '115';
+  const targetMonths = mode === 'only_114' ? [1,2,3,4,5,6,7,8,9,10,11,12] : Array.from({length: maxM}, (_, i) => i + 1);
+  const periodLabel = mode === 'only_114' ? '114年全年' : `115年1-${maxM}月`;
+  const compLabel = mode === 'yoy_sync' ? `vs 114年1-${maxM}月` : (mode === 'full_year' ? 'vs 114年全年' : '單年度檢視');
+
+  // --- 1. KPI CALCULATIONS ---
+  const s1Curr = s1Data.filter(d => d.year === targetYear && targetMonths.includes(d.month));
+  const s1Base = base114;
+
+  const totVeh = s1Curr.reduce((a, b) => a + b.tot_veh, 0);
+  const baseVeh = s1Base.reduce((a, b) => a + b.tot_veh, 0);
+  const vehDiffPct = baseVeh > 0 ? ((totVeh - baseVeh) / baseVeh * 100) : 0;
+  const carPct = totVeh > 0 ? (s1Curr.reduce((a, b) => a + b.car_tot, 0) / totVeh * 100) : 0;
+
+  const shipTons = s1Curr.reduce((a, b) => a + b.ship_wt_kg, 0) / 1000;
+
+  const s2CurrAll = s2Data.filter(d => d.plant === '4家合計' && d.year === targetYear && targetMonths.includes(d.month));
+  const certInAllTons = s2CurrAll.reduce((a, b) => a + b.in_cert, 0) / 1000;
+
+  const s2CurrPlant = s2Data.filter(d => d.plant === plant && d.year === targetYear && targetMonths.includes(d.month));
+  const s2BasePlant = s2Data.filter(d => d.plant === plant && d.year === '114' && (mode === 'yoy_sync' ? d.month <= maxM : true));
+
+  const inTons = s2CurrPlant.reduce((a, b) => a + b.in_tot, 0) / 1000;
+  const baseInTons = s2BasePlant.reduce((a, b) => a + b.in_tot, 0) / 1000;
+  const inDiffPct = baseInTons > 0 ? ((inTons - baseInTons) / baseInTons * 100) : 0;
+  const certInPlantTons = s2CurrPlant.reduce((a, b) => a + b.in_cert, 0) / 1000;
+  const certShare = inTons > 0 ? (certInPlantTons / inTons * 100) : 0;
+
+  const procTons = s2CurrPlant.reduce((a, b) => a + b.proc_wt, 0) / 1000;
+  const baseProcTons = s2BasePlant.reduce((a, b) => a + b.proc_wt, 0) / 1000;
+  const procDiffPct = baseProcTons > 0 ? ((procTons - baseProcTons) / baseProcTons * 100) : 0;
+  const procRatio = inTons > 0 ? (procTons / inTons * 100) : 0;
+
+  const latestRec = s2CurrPlant[s2CurrPlant.length - 1] || { ym: '-', inv_shell: 0, inv_asr: 0, inv_asrdf: 0, asrdf_prod: 1 };
+  const invShellT = latestRec.inv_shell / 1000;
+  const invAsrT = latestRec.inv_asr / 1000;
+  const invAsrdfT = latestRec.inv_asrdf / 1000;
+  const isAsrdfHigh = latestRec.inv_asrdf > (latestRec.asrdf_prod * 0.45);
+
+  const kpiHtml = `
+    <div class="kpi-card" style="--accent: #1A73E8;">
+      <div class="kpi-title">廢車總回收量 (${periodLabel})</div>
+      <div class="kpi-val">${fmtNum(totVeh)} 輛</div>
+      <div class="kpi-sub1" style="color:${mode.startsWith('only') ? '#5F6368' : (vehDiffPct >= 0 ? '#137333' : '#C5221F')}">
+        ${mode.startsWith('only') ? '全國汽機車回收總計' : `${vehDiffPct >= 0 ? '▲' : '▼'} ${Math.abs(vehDiffPct).toFixed(1)}% ${compLabel}`}
+      </div>
+      <div class="kpi-sub2">汽車 ${carPct.toFixed(1)}% ｜ 機車 ${(100 - carPct).toFixed(1)}%</div>
+    </div>
+    <div class="kpi-card" style="--accent: #0D652D;">
+      <div class="kpi-title">認證廢車殼清運量 (${periodLabel})</div>
+      <div class="kpi-val">${shipTons > 0 ? fmtNum(shipTons) + ' 公噸' : '114年未單獨列計'}</div>
+      <div class="kpi-sub1" style="color:#5F6368">
+        ${certInAllTons > 0 ? `處理業認證進場 ${fmtNum(certInAllTons)} 噸` : '詳見處理業總進場量'}
+      </div>
+      <div class="kpi-sub2">回收端經認證清運出廠累計重量</div>
+    </div>
+    <div class="kpi-card" style="--accent: #E37400;">
+      <div class="kpi-title">處理業總進場量【${plant}】</div>
+      <div class="kpi-val">${fmtNum(inTons)} 公噸</div>
+      <div class="kpi-sub1" style="color:${mode.startsWith('only') ? '#5F6368' : (inDiffPct >= 0 ? '#137333' : '#C5221F')}">
+        ${mode.startsWith('only') ? periodLabel : `${inDiffPct >= 0 ? '▲' : '▼'} ${Math.abs(inDiffPct).toFixed(1)}% ${compLabel}`}
+      </div>
+      <div class="kpi-sub2">${targetYear === '115' ? `認證來源 ${certShare.toFixed(1)}% ｜ 非認證 ${(100-certShare).toFixed(1)}%` : '114年未區分認證/非認證來源'}</div>
+    </div>
+    <div class="kpi-card" style="--accent: #1967D2;">
+      <div class="kpi-title">處理業投料處理量【${plant}】</div>
+      <div class="kpi-val">${fmtNum(procTons)} 公噸</div>
+      <div class="kpi-sub1" style="color:${mode.startsWith('only') ? '#5F6368' : (procDiffPct >= 0 ? '#137333' : '#C5221F')}">
+        ${mode.startsWith('only') ? periodLabel : `${procDiffPct >= 0 ? '▲' : '▼'} ${Math.abs(procDiffPct).toFixed(1)}% ${compLabel}`}
+      </div>
+      <div class="kpi-sub2">投料/進場比 ${procRatio.toFixed(1)}%</div>
+    </div>
+    <div class="kpi-card" style="--accent: ${isAsrdfHigh ? '#D93025' : '#137333'};">
+      <div class="kpi-title">期末庫存檢核 (${latestRec.ym} / ${plant})</div>
+      <div class="kpi-val">廢車殼 ${fmtNum(invShellT)} 噸</div>
+      <div class="kpi-sub1" style="color:${isAsrdfHigh ? '#C5221F' : '#137333'}">
+        ${isAsrdfHigh ? '⚠' : '✔'} ASR-DF 庫存 ${fmtNum(invAsrdfT)} 噸 ${isAsrdfHigh ? '(偏高)' : '(正常)'}
+      </div>
+      <div class="kpi-sub2">ASR 庫存 ${fmtNum(invAsrT, 1)} 噸</div>
+    </div>
+  `;
+  document.getElementById('kpiGrid').innerHTML = kpiHtml;
+
+  // --- 2. CHART A: RECYCLING TREND ---
+  const labelsTL = timeline.map(d => d.ym);
+  updateChart('chartRecycleTrend', {
+    type: 'bar',
+    data: {
+      labels: labelsTL,
+      datasets: [
+        { label: '認證量(千輛)', data: timeline.map(d => +(d.tot_cert/1000).toFixed(2)), backgroundColor: '#1A73E8', stack: 'veh', yAxisID: 'y' },
+        { label: '出口量(千輛)', data: timeline.map(d => +(d.tot_exp/1000).toFixed(2)), backgroundColor: '#34A853', stack: 'veh', yAxisID: 'y' },
+        { label: '其他量(千輛)', data: timeline.map(d => +(d.tot_oth/1000).toFixed(2)), backgroundColor: '#FBBC04', stack: 'veh', yAxisID: 'y' },
+        { label: '換算總重量(千噸)', data: timeline.map(d => +(d.est_wt_kg/1e6).toFixed(2)), type: 'line', borderColor: '#EA4335', backgroundColor: '#EA4335', tension: 0.25, pointRadius: 3.5, borderWidth: 2.2, yAxisID: 'y1' }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 10.5 } } },
+        y: { stacked: true, title: { display: true, text: '回收輛數 (千輛)', font: { size: 11 } }, beginAtZero: true },
+        y1: { position: 'right', title: { display: true, text: '換算總重量 (千噸)', font: { size: 11 }, color: '#EA4335' }, grid: { drawOnChartArea: false }, beginAtZero: true }
+      }
+    }
+  });
+
+  // --- 3. CHART B: CAR VS MOTO MIX ---
+  const carCert = s1Curr.reduce((a,b)=>a+b.car_cert,0);
+  const carExp = s1Curr.reduce((a,b)=>a+b.car_exp,0);
+  const carOth = s1Curr.reduce((a,b)=>a+b.car_oth,0);
+  const carSum = carCert + carExp + carOth || 1;
+
+  const motoCert = s1Curr.reduce((a,b)=>a+b.moto_cert,0);
+  const motoExp = s1Curr.reduce((a,b)=>a+b.moto_exp,0);
+  const motoOth = s1Curr.reduce((a,b)=>a+b.moto_oth,0);
+  const motoSum = motoCert + motoExp + motoOth || 1;
+
+  document.getElementById('titleVehicleMix').textContent = `【回收業】${periodLabel} 汽、機車回收去向結構差異`;
+  updateChart('chartVehicleMix', {
+    type: 'bar',
+    data: {
+      labels: [`汽車 (${(carSum/10000).toFixed(1)}萬輛)`, `機車 (${(motoSum/10000).toFixed(1)}萬輛)`],
+      datasets: [
+        { label: '認證 (%)', data: [+(carCert/carSum*100).toFixed(1), +(motoCert/motoSum*100).toFixed(1)], backgroundColor: '#1A73E8' },
+        { label: '出口 (%)', data: [+(carExp/carSum*100).toFixed(1), +(motoExp/motoSum*100).toFixed(1)], backgroundColor: '#34A853' },
+        { label: '其他 (%)', data: [+(carOth/carSum*100).toFixed(1), +(motoOth/motoSum*100).toFixed(1)], backgroundColor: '#FBBC04' }
+      ]
+    },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } } },
+      scales: {
+        x: { stacked: true, max: 100, ticks: { callback: v => v + '%' } },
+        y: { stacked: true, grid: { display: false }, ticks: { font: { size: 12, weight: 'bold' } } }
+      }
+    }
+  });
+
+  // --- 4. CHART C: SHELL INPUT VS PROC VS INV ---
+  const s2Timeline = labelsTL.map(ym => s2Data.find(d => d.plant === plant && d.ym === ym) || {});
+  document.getElementById('badgePlant1').textContent = plant;
+
+  updateChart('chartShellFlow', {
+    type: 'bar',
+    data: {
+      labels: labelsTL,
+      datasets: [
+        { label: '114總進場(未分來源)', data: s2Timeline.map(d => d.in_cert === 0 ? +(d.in_tot/1e6).toFixed(2) : 0), backgroundColor: '#80868B', stack: 'in', yAxisID: 'y' },
+        { label: '認證進場(千噸)', data: s2Timeline.map(d => +(d.in_cert/1e6).toFixed(2)), backgroundColor: '#1967D2', stack: 'in', yAxisID: 'y' },
+        { label: '非認證進場(千噸)', data: s2Timeline.map(d => +(d.in_noncert/1e6).toFixed(2)), backgroundColor: '#669DF6', stack: 'in', yAxisID: 'y' },
+        { label: '投料處理量(千噸)', data: s2Timeline.map(d => +(d.proc_wt/1e6).toFixed(2)), backgroundColor: '#34A853', stack: 'proc', yAxisID: 'y' },
+        { label: '廢車殼庫存(千噸/右軸)', data: s2Timeline.map(d => +(d.inv_shell/1e6).toFixed(2)), type: 'line', borderColor: '#E37400', backgroundColor: '#E37400', pointRadius: 3.5, borderWidth: 2.2, tension: 0.2, yAxisID: 'y1' }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'top', labels: { boxWidth: 11, font: { size: 10.5 } } } },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 10.5 } } },
+        y: { stacked: true, title: { display: true, text: '進/投料量 (千噸)', font: { size: 11 } }, beginAtZero: true },
+        y1: { position: 'right', title: { display: true, text: '廢車殼庫存 (千噸)', font: { size: 11 }, color: '#E37400' }, grid: { drawOnChartArea: false }, beginAtZero: true }
+      }
+    }
+  });
+
+  // --- 5. CHART D: ASR & ASR-DF INVENTORY TRACKING ---
+  document.getElementById('badgeAsrAlert').textContent = `${plant} ｜ 期末ASRDF庫存 ${fmtNum(invAsrdfT, 1)} 噸`;
+  updateChart('chartAsrFlow', {
+    type: 'bar',
+    data: {
+      labels: labelsTL,
+      datasets: [
+        { label: 'ASRDF產生量(千噸)', data: s2Timeline.map(d => +(d.asrdf_prod/1e6).toFixed(2)), backgroundColor: 'rgba(147, 52, 230, 0.8)', yAxisID: 'y' },
+        { label: 'ASRDF出貨量(千噸)', data: s2Timeline.map(d => +(d.asrdf_ship/1e6).toFixed(2)), backgroundColor: 'rgba(18, 181, 203, 0.85)', yAxisID: 'y' },
+        { label: 'ASRDF庫存(千噸/右軸)', data: s2Timeline.map(d => +(d.inv_asrdf/1e6).toFixed(3)), type: 'line', borderColor: '#D93025', backgroundColor: '#D93025', pointRadius: 4, borderWidth: 2.4, tension: 0.2, yAxisID: 'y1' },
+        { label: 'ASR庫存(千噸/右軸)', data: s2Timeline.map(d => +(d.inv_asr/1e6).toFixed(3)), type: 'line', borderColor: '#5F6368', backgroundColor: '#5F6368', borderDash: [4,4], pointRadius: 3, borderWidth: 1.8, tension: 0.2, yAxisID: 'y1' }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { position: 'top', labels: { boxWidth: 11, font: { size: 10.5 } } } },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 10.5 } } },
+        y: { title: { display: true, text: '產生/出貨量 (千噸)', font: { size: 11 } }, beginAtZero: true },
+        y1: { position: 'right', title: { display: true, text: '期末庫存 (千噸)', font: { size: 11 }, color: '#D93025' }, grid: { drawOnChartArea: false }, beginAtZero: true }
+      }
+    }
+  });
+
+  // --- 6. CHART E & TABLE F: 4 PLANTS COMPARISON ---
+  const plantStats = PLANTS.map(pName => {
+    const rows = s2Data.filter(d => d.plant === pName && d.year === targetYear && targetMonths.includes(d.month));
+    const latest = rows[rows.length - 1] || { inv_shell: 0, inv_asr: 0, inv_asrdf: 0, asrdf_prod: 1 };
+    const cert = rows.reduce((a,b)=>a+b.in_cert,0)/1000;
+    const noncert = rows.reduce((a,b)=>a+b.in_noncert,0)/1000;
+    const tot = rows.reduce((a,b)=>a+b.in_tot,0)/1000;
+    const proc = rows.reduce((a,b)=>a+b.proc_wt,0)/1000;
+    const asrdfProd = rows.reduce((a,b)=>a+b.asrdf_prod,0)/1000;
+    return {
+      name: pName,
+      cert, noncert, tot, proc, asrdfProd,
+      invShell: latest.inv_shell/1000,
+      invAsr: latest.inv_asr/1000,
+      invAsrdf: latest.inv_asrdf/1000,
+      lastAsrdfProd: latest.asrdf_prod/1000
+    };
+  });
+
+  document.getElementById('titlePlantCompare').textContent = `【4家處理業比較】${periodLabel} 進場規模與來源結構`;
+  updateChart('chartPlantCompare', {
+    type: 'bar',
+    data: {
+      labels: plantStats.map(p => p.name),
+      datasets: targetYear === '115' ? [
+        { label: '認證進場(千噸)', data: plantStats.map(p => +(p.cert/1000).toFixed(2)), backgroundColor: '#1967D2' },
+        { label: '非認證進場(千噸)', data: plantStats.map(p => +(p.noncert/1000).toFixed(2)), backgroundColor: '#669DF6' }
+      ] : [
+        { label: '總進場量(千噸/114未分來源)', data: plantStats.map(p => +(p.tot/1000).toFixed(2)), backgroundColor: '#80868B' }
+      ]
+    },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
+      scales: {
+        x: { stacked: true, title: { display: true, text: '累計進場量 (千公噸)', font: { size: 11 } } },
+        y: { stacked: true, grid: { display: false }, ticks: { font: { size: 12, weight: 'bold' } } }
+      }
+    }
+  });
+
+  // Render Audit Table
+  document.getElementById('titleAuditTable').textContent = `【4家處理業與整體】營運量能暨庫存健康度檢核表 (${periodLabel}累計 / ${latestRec.ym}月底庫存)`;
+  const sumTot = plantStats.reduce((a,b)=>a+b.tot,0);
+  const sumCert = plantStats.reduce((a,b)=>a+b.cert,0);
+  const sumProc = plantStats.reduce((a,b)=>a+b.proc,0);
+  const sumInvShell = plantStats.reduce((a,b)=>a+b.invShell,0);
+  const sumInvAsr = plantStats.reduce((a,b)=>a+b.invAsr,0);
+  const sumAsrdfProd = plantStats.reduce((a,b)=>a+b.asrdfProd,0);
+  const sumInvAsrdf = plantStats.reduce((a,b)=>a+b.invAsrdf,0);
+
+  let tbodyHtml = `
+    <thead>
+      <tr>
+        <th>處理廠別</th>
+        <th>總進場量(噸)</th>
+        <th>認證佔比</th>
+        <th>投料處理(噸)</th>
+        <th>廢車殼庫存(噸)</th>
+        <th>ASR庫存(噸)</th>
+        <th>ASRDF產生(噸)</th>
+        <th>ASRDF庫存(噸)</th>
+        <th>庫存狀態檢核</th>
+      </tr>
+    </thead>
+    <tbody>
+  `;
+
+  plantStats.forEach(p => {
+    const certPctStr = targetYear === '115' && p.tot > 0 ? (p.cert / p.tot * 100).toFixed(1) + '%' : '未分來源';
+    let asrdfClass = '';
+    let asrClass = p.invAsr > 80 ? 'cell-alert-mid' : '';
+    let statusHtml = '<span class="status-pill st-ok">✔ 去化順暢</span>';
+
+    if (p.invAsrdf >= 650) {
+      asrdfClass = 'cell-alert-high';
+      statusHtml = '<span class="status-pill st-danger">⚠ ASRDF庫存偏高</span>';
+    } else if (p.invAsrdf >= 450 && p.invAsr > 80) {
+      asrdfClass = 'cell-alert-mid';
+      statusHtml = '<span class="status-pill st-warn">⚠ ASR/ASRDF雙高</span>';
+    } else if (p.invAsrdf >= 450) {
+      asrdfClass = 'cell-alert-mid';
+      statusHtml = '<span class="status-pill st-warn">⚠ ASRDF庫存留意</span>';
+    }
+
+    const isSelected = plant === p.name ? 'row-active' : '';
+    tbodyHtml += `
+      <tr class="clickable ${isSelected}" onclick="selectPlant('${p.name}')" title="點擊切換檢視 ${p.name} 專屬圖表">
+        <td><strong>${p.name}</strong></td>
+        <td>${fmtNum(p.tot)}</td>
+        <td>${certPctStr}</td>
+        <td>${fmtNum(p.proc)}</td>
+        <td>${fmtNum(p.invShell, 1)}</td>
+        <td class="${asrClass}">${fmtNum(p.invAsr, 1)}</td>
+        <td>${fmtNum(p.asrdfProd, 1)}</td>
+        <td class="${asrdfClass}">${fmtNum(p.invAsrdf, 1)}</td>
+        <td>${statusHtml}</td>
+      </tr>
+    `;
+  });
+
+  const totCertPctStr = targetYear === '115' && sumTot > 0 ? (sumCert / sumTot * 100).toFixed(1) + '%' : '未分來源';
+  const totSelected = plant === '4家合計' ? 'row-active' : '';
+  tbodyHtml += `
+      <tr class="clickable row-total ${totSelected}" onclick="selectPlant('4家合計')" title="點擊切回 4家合計整體檢視">
+        <td>4家合計(整體)</td>
+        <td>${fmtNum(sumTot)}</td>
+        <td>${totCertPctStr}</td>
+        <td>${fmtNum(sumProc)}</td>
+        <td>${fmtNum(sumInvShell, 1)}</td>
+        <td>${fmtNum(sumInvAsr, 1)}</td>
+        <td>${fmtNum(sumAsrdfProd, 1)}</td>
+        <td>${fmtNum(sumInvAsrdf, 1)}</td>
+        <td><span class="status-pill ${sumInvAsrdf > 1500 ? 'st-danger' : 'st-ok'}">${sumInvAsrdf > 1500 ? '需關注ASRDF去化' : '整體庫存正常'}</span></td>
+      </tr>
+    </tbody>
+  `;
+  document.getElementById('auditTable').innerHTML = tbodyHtml;
+}
+
+function selectPlant(pName) {
+  document.getElementById('plantSelect').value = pName;
+  renderDashboard();
+}
+
+function updateChart(id, config) {
+  if (charts[id]) {
+    charts[id].destroy();
+  }
+  const ctx = document.getElementById(id).getContext('2d');
+  charts[id] = new Chart(ctx, config);
+}
+
+// Excel File Upload Parser (Allows instant refresh when user updates Excel!)
+document.getElementById('excelInput').addEventListener('change', function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(evt) {
+    try {
+      const data = new Uint8Array(evt.target.result);
+      const wb = XLSX.read(data, { type: 'array' });
+
+      // Parse Sheet 1: 廢車回收業
+      const ws1 = wb.Sheets['廢車回收業'];
+      const rows1 = XLSX.utils.sheet_to_json(ws1, { header: 1 });
+      const newS1 = [];
+      for (let r = 0; r < rows1.length; r++) {
+        const ym = String(rows1[r][0] || '').trim();
+        if (/^(114|115|116)-\d{2}$/.test(ym)) {
+          const totVeh = Number(rows1[r][12]) || 0;
+          if (totVeh > 0) {
+            newS1.push({
+              ym,
+              year: ym.slice(0, 3),
+              month: parseInt(ym.slice(4, 6), 10),
+              car_cert: Number(rows1[r][1]) || 0,
+              car_exp: Number(rows1[r][2]) || 0,
+              car_oth: Number(rows1[r][3]) || 0,
+              car_tot: Number(rows1[r][4]) || 0,
+              moto_cert: Number(rows1[r][5]) || 0,
+              moto_exp: Number(rows1[r][6]) || 0,
+              moto_oth: Number(rows1[r][7]) || 0,
+              moto_tot: Number(rows1[r][8]) || 0,
+              tot_cert: Number(rows1[r][9]) || 0,
+              tot_exp: Number(rows1[r][10]) || 0,
+              tot_oth: Number(rows1[r][11]) || 0,
+              tot_veh: totVeh,
+              est_wt_kg: Number(rows1[r][13]) || 0,
+              ship_wt_kg: Number(rows1[r][14]) || 0
+            });
+          }
+        }
+      }
+
+      // Parse Sheet 2: 廢車處理業
+      const ws2 = wb.Sheets['廢車處理業'];
+      const rows2 = XLSX.utils.sheet_to_json(ws2, { header: 1 });
+      const newS2 = [];
+      let currentPlant = '4家合計';
+      for (let r = 0; r < rows2.length; r++) {
+        const col0 = String(rows2[r][0] || '').trim();
+        if (col0 && ['4家合計', '帝壹統', '集合成', '綠化', '巨基'].includes(col0)) {
+          currentPlant = col0;
+        }
+        const ym = String(rows2[r][1] || '').trim();
+        if (/^(114|115|116)-\d{2}$/.test(ym)) {
+          const inTot = Number(rows2[r][4]) || 0;
+          if (inTot > 0) {
+            newS2.push({
+              plant: currentPlant,
+              ym,
+              year: ym.slice(0, 3),
+              month: parseInt(ym.slice(4, 6), 10),
+              in_cert: Number(rows2[r][2]) || 0,
+              in_noncert: Number(rows2[r][3]) || 0,
+              in_tot: inTot,
+              proc_wt: Number(rows2[r][5]) || 0,
+              inv_shell: Number(rows2[r][6]) || 0,
+              asr_prod: Number(rows2[r][7]) || 0,
+              asrdf_prod: Number(rows2[r][8]) || 0,
+              asr_ship: Number(rows2[r][9]) || 0,
+              asrdf_ship: Number(rows2[r][10]) || 0,
+              inv_asr: Number(rows2[r][11]) || 0,
+              inv_asrdf: Number(rows2[r][12]) || 0
+            });
+          }
+        }
+      }
+
+      if (newS1.length > 0 && newS2.length > 0) {
+        s1Data = newS1.sort((a,b) => a.ym.localeCompare(b.ym));
+        s2Data = newS2;
+        const latestYm = s1Data[s1Data.length - 1].ym;
+        document.getElementById('dataStatusText').textContent = `已匯入《${file.name}》最新數據（截至 ${latestYm}）｜ 圖表已即時同步更新`;
+        initMonthSelector();
+        renderDashboard();
+        alert(`匯入成功！已自動更新至最新月份：${latestYm}`);
+      } else {
+        alert('無法讀取有效數據，請確認檔案包含「廢車回收業」與「廢車處理業」兩個工作表且格式未變動。');
+      }
+    } catch (err) {
+      alert('讀取 Excel 發生錯誤：' + err.message);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+});
+
+document.getElementById('modeSelect').addEventListener('change', renderDashboard);
+document.getElementById('monthSelect').addEventListener('change', renderDashboard);
+document.getElementById('plantSelect').addEventListener('change', renderDashboard);
+
+initMonthSelector();
+renderDashboard();
+</script>
+</body>
+</html>
